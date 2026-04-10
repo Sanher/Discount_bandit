@@ -1,0 +1,3 @@
+build_from:
+  amd64: "cybrarist/discount-bandit:v4.0.3"
+  aarch64: "cybrarist/discount-bandit:v4.0.3"
