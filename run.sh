@@ -9,6 +9,9 @@ APP_KEY_FILE="${STATE_DIR}/app_key"
 STORAGE_DIR="${STATE_DIR}/storage"
 LOG_DIR="${STATE_DIR}/logs"
 SUPERVISOR_CONF="/etc/supervisor/conf.d/supervisord.conf"
+UPSTREAM_PORT="${DISCOUNT_BANDIT_UPSTREAM_PORT:-80}"
+INGRESS_PORT="${DISCOUNT_BANDIT_INGRESS_PORT:-8099}"
+NGINX_CONF_PATH="${DISCOUNT_BANDIT_NGINX_CONF:-/etc/nginx/http.d/default.conf}"
 
 timestamp() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
@@ -115,6 +118,62 @@ start_log_tail() {
     "${LOG_DIR}/octane_stderr.log" \
     "${LOG_DIR}/scheduler.log" \
     "${LOG_DIR}/default_worker.log" &
+  LOG_TAIL_PID=$!
+}
+
+should_use_nginx_proxy() {
+  command -v nginx >/dev/null 2>&1 && [ -f "${NGINX_CONF_PATH}" ]
+}
+
+start_upstream_background() {
+  log_info "Arrancando Discount Bandit upstream en ${FRANKEN_HOST}:${UPSTREAM_PORT}."
+  "${UPSTREAM_ENTRYPOINT}" &
+  UPSTREAM_PID=$!
+}
+
+start_nginx_proxy() {
+  log_info "Arrancando proxy nginx para ingress en el puerto interno ${INGRESS_PORT}."
+  nginx -t
+  nginx -g "daemon off;" &
+  NGINX_PID=$!
+}
+
+cleanup() {
+  exit_code=$?
+  trap - EXIT INT TERM
+
+  if [ -n "${NGINX_PID:-}" ] && kill -0 "${NGINX_PID}" 2>/dev/null; then
+    kill "${NGINX_PID}" 2>/dev/null || true
+    wait "${NGINX_PID}" 2>/dev/null || true
+  fi
+
+  if [ -n "${UPSTREAM_PID:-}" ] && kill -0 "${UPSTREAM_PID}" 2>/dev/null; then
+    kill "${UPSTREAM_PID}" 2>/dev/null || true
+    wait "${UPSTREAM_PID}" 2>/dev/null || true
+  fi
+
+  if [ -n "${LOG_TAIL_PID:-}" ] && kill -0 "${LOG_TAIL_PID}" 2>/dev/null; then
+    kill "${LOG_TAIL_PID}" 2>/dev/null || true
+    wait "${LOG_TAIL_PID}" 2>/dev/null || true
+  fi
+
+  exit "${exit_code}"
+}
+
+monitor_processes() {
+  while true; do
+    if [ -n "${UPSTREAM_PID:-}" ] && ! kill -0 "${UPSTREAM_PID}" 2>/dev/null; then
+      wait "${UPSTREAM_PID}"
+      return $?
+    fi
+
+    if [ -n "${NGINX_PID:-}" ] && ! kill -0 "${NGINX_PID}" 2>/dev/null; then
+      wait "${NGINX_PID}"
+      return $?
+    fi
+
+    sleep 2
+  done
 }
 
 export_runtime_config() {
@@ -131,12 +190,19 @@ export_runtime_config() {
   export SESSION_DRIVER="database"
   export CACHE_STORE="database"
   export QUEUE_CONNECTION="database"
-  # Listen on all interfaces so the HA-published port can reach FrankenPHP.
-  export FRANKEN_HOST="0.0.0.0"
   export LOG_LEVEL="info"
   export THEME_COLOR="${theme_color}"
   export CRON="${cron_expression}"
   export EXCHANGE_RATE_API_KEY="${exchange_rate_api_key}"
+
+  if [ "${USE_NGINX_PROXY:-0}" = "1" ]; then
+    export FRANKEN_HOST="127.0.0.1"
+    log_info "Modo ingress habilitado: nginx publica ${INGRESS_PORT} y upstream queda solo en localhost:${UPSTREAM_PORT}."
+  else
+    # Listen on all interfaces so the HA-published port can reach FrankenPHP.
+    export FRANKEN_HOST="0.0.0.0"
+    log_info "Modo directo habilitado: upstream expuesto en ${FRANKEN_HOST}:${UPSTREAM_PORT}."
+  fi
 
   if [ -n "${public_base_url}" ]; then
     export APP_URL="${public_base_url}"
@@ -154,6 +220,13 @@ export_runtime_config() {
 main() {
   [ -x "${UPSTREAM_ENTRYPOINT}" ] || fail "No encuentro el entrypoint upstream en ${UPSTREAM_ENTRYPOINT}."
 
+  if should_use_nginx_proxy; then
+    USE_NGINX_PROXY="1"
+  else
+    USE_NGINX_PROXY="0"
+  fi
+  export USE_NGINX_PROXY
+
   ensure_state
   link_persistent_paths
   patch_supervisor_logs
@@ -161,6 +234,15 @@ main() {
   export_runtime_config
 
   cd /app
+
+  if [ "${USE_NGINX_PROXY}" = "1" ]; then
+    trap cleanup EXIT INT TERM
+    start_upstream_background
+    start_nginx_proxy
+    monitor_processes
+    exit $?
+  fi
+
   log_info "Arrancando Discount Bandit upstream."
   exec "${UPSTREAM_ENTRYPOINT}"
 }

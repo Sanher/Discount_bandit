@@ -1,0 +1,63 @@
+diff --git a/app/Http/Middleware/TrustIngressPath.php b/app/Http/Middleware/TrustIngressPath.php
+new file mode 100644
+index 0000000..86dfe52
+--- /dev/null
++++ b/app/Http/Middleware/TrustIngressPath.php
+@@ -0,0 +1,45 @@
++<?php
++
++namespace App\Http\Middleware;
++
++use Closure;
++use Illuminate\Http\Request;
++use Illuminate\Support\Facades\URL;
++use Symfony\Component\HttpFoundation\Response;
++
++class TrustIngressPath
++{
++    public function handle(Request $request, Closure $next): Response
++    {
++        $this->applyBaseUrl($request);
++
++        return $next($request);
++    }
++
++    protected function applyBaseUrl(Request $request): void
++    {
++        $scheme = $request->headers->get('X-Forwarded-Proto') ?: $request->getScheme();
++        $host = $request->headers->get('X-Forwarded-Host') ?: $request->getHttpHost();
++        $ingressPath = trim((string) $request->headers->get('X-Ingress-Path', ''), " \t\n\r\0\x0B");
++
++        if ($host === '') {
++            return;
++        }
++
++        $normalizedIngressPath = $ingressPath === ''
++            ? ''
++            : '/'.trim($ingressPath, '/');
++
++        $baseUrl = rtrim(sprintf('%s://%s%s', $scheme, $host, $normalizedIngressPath), '/');
++
++        URL::forceRootUrl($baseUrl);
++        URL::forceScheme($scheme);
++
++        config([
++            'app.url' => $baseUrl,
++            'app.asset_url' => $baseUrl,
++            'filesystems.disks.public.url' => $baseUrl.'/storage',
++            'filesystems.disks.store.url' => $baseUrl.'/storage/store',
++        ]);
++    }
++}
+diff --git a/bootstrap/app.php b/bootstrap/app.php
+index 238feb0..898e196 100644
+--- a/bootstrap/app.php
++++ b/bootstrap/app.php
+@@ -13,6 +13,7 @@
+     )
+     ->withMiddleware(function (Middleware $middleware) {
+         $middleware->trustProxies(at: '*');
++        $middleware->append(\App\Http\Middleware\TrustIngressPath::class);
+     })
+     ->withExceptions(function (Exceptions $exceptions) {
+ //        $exceptions->render(function (Exception $e) {

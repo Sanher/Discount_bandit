@@ -3,7 +3,10 @@ wrapper_type: home_assistant_wrapper_source
 upstream_repo: https://github.com/cybrarist/discount-bandit.git
 upstream_ref: ef0637c9a7a1c01a31ad96754f2ae1bb17ac7d9b
 runtime_entrypoint: run.sh
+nginx_config: nginx.conf
+patches_dir: patches
+canonical_patch_artifact: patches/discount-bandit-ingress-v4.patch
 notes:
   - Parent add-on should consume this repository by tag.
-  - Parent add-on can copy run.sh from this wrapper source.
+  - Parent add-on can copy run.sh, nginx.conf and patches from this wrapper source.
   - Parent add-on should pin the third-party upstream using upstream_repo and upstream_ref.
