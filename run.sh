@@ -89,7 +89,7 @@ link_persistent_paths() {
   ln -sfn "${STORAGE_DIR}" /app/storage
 
   if [ -e /app/database/sqlite ] && [ ! -L /app/database/sqlite ]; then
-    rm -f /app/database/sqlite
+    rm -rf /app/database/sqlite
   fi
   ln -sfn "${DB_FILE}" /app/database/sqlite
 }
