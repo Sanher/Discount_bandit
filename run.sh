@@ -11,7 +11,7 @@ LOG_DIR="${STATE_DIR}/logs"
 SUPERVISOR_CONF="/etc/supervisor/conf.d/supervisord.conf"
 UPSTREAM_PORT="${DISCOUNT_BANDIT_UPSTREAM_PORT:-80}"
 INGRESS_PORT="${DISCOUNT_BANDIT_INGRESS_PORT:-8099}"
-NGINX_CONF_PATH="${DISCOUNT_BANDIT_NGINX_CONF:-/etc/nginx/http.d/default.conf}"
+NGINX_CONF_PATH=""
 
 timestamp() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
@@ -122,7 +122,33 @@ start_log_tail() {
 }
 
 should_use_nginx_proxy() {
-  command -v nginx >/dev/null 2>&1 && [ -f "${NGINX_CONF_PATH}" ]
+  command -v nginx >/dev/null 2>&1 || return 1
+
+  NGINX_CONF_PATH="$(resolve_nginx_conf_path)" || return 1
+  export NGINX_CONF_PATH
+  return 0
+}
+
+resolve_nginx_conf_path() {
+  if [ -n "${DISCOUNT_BANDIT_NGINX_CONF:-}" ]; then
+    if [ -f "${DISCOUNT_BANDIT_NGINX_CONF}" ]; then
+      printf "%s" "${DISCOUNT_BANDIT_NGINX_CONF}"
+      return 0
+    fi
+    return 1
+  fi
+
+  for candidate in \
+    /etc/nginx/conf.d/discount-bandit-ingress.conf \
+    /etc/nginx/http.d/default.conf
+  do
+    if [ -f "${candidate}" ]; then
+      printf "%s" "${candidate}"
+      return 0
+    fi
+  done
+
+  return 1
 }
 
 start_upstream_background() {
@@ -132,7 +158,7 @@ start_upstream_background() {
 }
 
 start_nginx_proxy() {
-  log_info "Arrancando proxy nginx para ingress en el puerto interno ${INGRESS_PORT}."
+  log_info "Arrancando proxy nginx para ingress en el puerto interno ${INGRESS_PORT} usando ${NGINX_CONF_PATH}."
   nginx -t
   nginx -g "daemon off;" &
   NGINX_PID=$!
@@ -208,6 +234,8 @@ export_runtime_config() {
     export APP_URL="${public_base_url}"
     export ASSET_URL="${public_base_url}"
     log_info "APP_URL configurado a ${public_base_url}."
+  elif [ "${USE_NGINX_PROXY:-0}" = "1" ]; then
+    log_info "public_base_url vacio en modo ingress; la base URL se resolvera dinamicamente con los headers de ingress."
   else
     log_warn "public_base_url vacio; Discount Bandit usara su APP_URL por defecto. Configuralo si accedes desde otra URL o puerto."
   fi
