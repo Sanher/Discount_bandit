@@ -49,6 +49,35 @@ index 0000000..86dfe52
 +        ]);
 +    }
 +}
+diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
+index e788a8c..61999be 100644
+--- a/app/Providers/AppServiceProvider.php
++++ b/app/Providers/AppServiceProvider.php
+@@ -7,8 +7,10 @@
+ use Filament\Tables\Enums\PaginationMode;
+ use Filament\Tables\Table;
+ use Filament\View\PanelsRenderHook;
++use Illuminate\Support\Facades\Route;
+ use Illuminate\Support\HtmlString;
+ use Illuminate\Support\ServiceProvider;
++use Livewire\Livewire;
+ 
+ class AppServiceProvider extends ServiceProvider
+ {
+@@ -21,6 +23,13 @@ public function register(): void {}
+      * Bootstrap any application services.
+      */
+     public function boot(): void {
++        Livewire::setScriptRoute(function ($handle) {
++            return Route::get('/livewire/livewire.js', $handle);
++        });
++
++        Livewire::setUpdateRoute(function ($handle) {
++            return Route::post('/livewire/update', $handle);
++        });
+ 
+         Table::configureUsing(function (Table $table): void {
+             $table->filtersLayout(FiltersLayout::AboveContentCollapsible)
 diff --git a/bootstrap/app.php b/bootstrap/app.php
 index 238feb0..898e196 100644
 --- a/bootstrap/app.php
