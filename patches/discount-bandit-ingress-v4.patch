@@ -122,7 +122,7 @@ new file mode 100644
 index 0000000..6ad62de
 --- /dev/null
 +++ b/app/Http/Middleware/TrustIngressPath.php
-@@ -0,0 +1,161 @@
+@@ -0,0 +1,176 @@
 +<?php
 +
 +namespace App\Http\Middleware;
@@ -142,7 +142,7 @@ index 0000000..6ad62de
 +        $context = $this->resolveIngressContext($request);
 +
 +        if ($context !== null) {
-+            $this->applyBaseUrl($context['base_url']);
++            $this->applyBaseUrl($context);
 +        }
 +
 +        if ($context !== null && $this->shouldLogRequest($request)) {
@@ -191,8 +191,13 @@ index 0000000..6ad62de
 +        ];
 +    }
 +
-+    protected function applyBaseUrl(string $baseUrl): void
++    protected function applyBaseUrl(array $context): void
 +    {
++        $baseUrl = $context['base_url'];
++        $cookiePath = $context['ingress_path'] === ''
++            ? '/'
++            : $context['ingress_path'];
++
 +        URL::forceRootUrl($baseUrl);
 +        URL::forceScheme(parse_url($baseUrl, PHP_URL_SCHEME) ?: 'http');
 +
@@ -202,6 +207,10 @@ index 0000000..6ad62de
 +            'livewire.asset_url' => $baseUrl.'/livewire/livewire.js',
 +            'filesystems.disks.public.url' => $baseUrl.'/storage',
 +            'filesystems.disks.store.url' => $baseUrl.'/storage/store',
++            'session.path' => $cookiePath,
++            'session.secure' => $context['scheme'] === 'https',
++            'session.same_site' => $context['ingress_path'] === '' ? config('session.same_site') : 'none',
++            'session.partitioned' => $context['ingress_path'] !== '',
 +        ]);
 +    }
 +
@@ -209,7 +218,8 @@ index 0000000..6ad62de
 +    {
 +        return $request->is('login')
 +            || $request->is('register')
-+            || $request->is('livewire/*');
++            || $request->is('livewire/*')
++            || $request->is('products*');
 +    }
 +
 +    protected function rewriteIngressAwareMarkup(Response $response, array $context): void
@@ -281,6 +291,11 @@ index 0000000..6ad62de
 +            'users_exist' => User::exists(),
 +            'authenticated' => $request->user() !== null,
 +            'has_livewire_header' => $request->headers->has('X-Livewire'),
++            'session_id' => $request->hasSession() ? $request->session()->getId() : null,
++            'session_cookie_path' => config('session.path'),
++            'session_same_site' => config('session.same_site'),
++            'session_partitioned' => config('session.partitioned'),
++            'intended_url' => $request->hasSession() ? $request->session()->get('url.intended') : null,
 +        ];
 +    }
 +}
@@ -289,7 +304,7 @@ new file mode 100644
 index 0000000..870fdb4
 --- /dev/null
 +++ b/app/Http/Responses/Auth/LoginResponse.php
-@@ -0,0 +1,26 @@
+@@ -0,0 +1,28 @@
 +<?php
 +
 +namespace App\Http\Responses\Auth;
@@ -311,6 +326,8 @@ index 0000000..870fdb4
 +            'reason' => 'login_success_response',
 +            'target' => $target,
 +            'authenticated' => auth()->check(),
++            'session_id' => $request->hasSession() ? $request->session()->getId() : null,
++            'intended_url' => $request->hasSession() ? $request->session()->get('url.intended') : null,
 +        ]);
 +
 +        return redirect()->intended($target);
