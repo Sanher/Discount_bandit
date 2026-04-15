@@ -7,7 +7,7 @@ index 7047037..dba1193 100644
  
  use App\Models\User;
 +use Filament\Facades\Filament;
-+use Filament\Http\Responses\Auth\Contracts\LoginResponse;
++use Filament\Auth\Http\Responses\Contracts\LoginResponse;
 +use Illuminate\Support\Facades\Log;
  
  class Login extends \Filament\Auth\Pages\Login
