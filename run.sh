@@ -233,7 +233,9 @@ export_runtime_config() {
     log_info "Modo directo habilitado: upstream expuesto en ${FRANKEN_HOST}:${UPSTREAM_PORT}."
   fi
 
-  if [ -n "${public_base_url}" ]; then
+  if [ "${USE_NGINX_PROXY:-0}" = "1" ] && [ -n "${public_base_url}" ]; then
+    log_warn "public_base_url esta configurado, pero se ignora en modo ingress para evitar assets fuera del prefijo de Home Assistant."
+  elif [ -n "${public_base_url}" ]; then
     export APP_URL="${public_base_url}"
     export ASSET_URL="${public_base_url}"
     log_info "APP_URL configurado a ${public_base_url}."

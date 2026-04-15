@@ -83,10 +83,10 @@ index fc5cd0e..61b6692 100644
          return parent::getRegisterFormAction();
 diff --git a/app/Http/Middleware/TrustIngressPath.php b/app/Http/Middleware/TrustIngressPath.php
 new file mode 100644
-index 0000000..600a9a2
+index 0000000..9a3aae7
 --- /dev/null
 +++ b/app/Http/Middleware/TrustIngressPath.php
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,141 @@
 +<?php
 +
 +namespace App\Http\Middleware;
@@ -96,6 +96,7 @@ index 0000000..600a9a2
 +use Illuminate\Http\Request;
 +use Illuminate\Support\Facades\Log;
 +use Illuminate\Support\Facades\URL;
++use Illuminate\Support\Str;
 +use Symfony\Component\HttpFoundation\Response;
 +
 +class TrustIngressPath
@@ -123,6 +124,10 @@ index 0000000..600a9a2
 +                    'is_redirect' => $response->isRedirection(),
 +                ]
 +            ));
++        }
++
++        if ($context !== null) {
++            $this->rewriteIngressAwareMarkup($response, $context);
 +        }
 +
 +        return $response;
@@ -168,6 +173,43 @@ index 0000000..600a9a2
 +        return $request->is('login')
 +            || $request->is('register')
 +            || $request->is('livewire/*');
++    }
++
++    protected function rewriteIngressAwareMarkup(Response $response, array $context): void
++    {
++        $contentType = (string) $response->headers->get('Content-Type', '');
++
++        if (! Str::contains($contentType, 'text/html')) {
++            return;
++        }
++
++        $content = $response->getContent();
++
++        if (! is_string($content) || $content === '') {
++            return;
++        }
++
++        $ingressPath = $context['ingress_path'];
++
++        if ($ingressPath === '') {
++            return;
++        }
++
++        $rewritten = str_replace(
++            [
++                ' src="/livewire/',
++                ' data-update-uri="/livewire/',
++            ],
++            [
++                ' src="'.$ingressPath.'/livewire/',
++                ' data-update-uri="'.$ingressPath.'/livewire/',
++            ],
++            $content
++        );
++
++        if ($rewritten !== $content) {
++            $response->setContent($rewritten);
++        }
 +    }
 +
 +    protected function buildLogContext(Request $request, array $context): array
