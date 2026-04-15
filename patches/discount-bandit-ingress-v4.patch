@@ -83,10 +83,10 @@ index fc5cd0e..61b6692 100644
          return parent::getRegisterFormAction();
 diff --git a/app/Http/Middleware/TrustIngressPath.php b/app/Http/Middleware/TrustIngressPath.php
 new file mode 100644
-index 0000000..9a3aae7
+index 0000000..6ad62de
 --- /dev/null
 +++ b/app/Http/Middleware/TrustIngressPath.php
-@@ -0,0 +1,141 @@
+@@ -0,0 +1,159 @@
 +<?php
 +
 +namespace App\Http\Middleware;
@@ -190,6 +190,8 @@ index 0000000..9a3aae7
 +        }
 +
 +        $ingressPath = $context['ingress_path'];
++        $baseUrl = $context['base_url'];
++        $hostRoot = $context['scheme'].'://'.$context['host'];
 +
 +        if ($ingressPath === '') {
 +            return;
@@ -197,11 +199,27 @@ index 0000000..9a3aae7
 +
 +        $rewritten = str_replace(
 +            [
++                $hostRoot.'/livewire/',
++                $hostRoot.'/storage/',
++                'http://localhost/storage/',
++                '"/livewire/',
++                '"/storage/',
++                "'/livewire/",
++                "'/storage/",
 +                ' src="/livewire/',
++                ' src="/storage/',
 +                ' data-update-uri="/livewire/',
 +            ],
 +            [
++                $baseUrl.'/livewire/',
++                $baseUrl.'/storage/',
++                $baseUrl.'/storage/',
++                '"'.$ingressPath.'/livewire/',
++                '"'.$ingressPath.'/storage/',
++                "'".$ingressPath.'/livewire/',
++                "'".$ingressPath.'/storage/',
 +                ' src="'.$ingressPath.'/livewire/',
++                ' src="'.$ingressPath.'/storage/',
 +                ' data-update-uri="'.$ingressPath.'/livewire/',
 +            ],
 +            $content
@@ -257,6 +275,28 @@ index e788a8c..61999be 100644
  
          Table::configureUsing(function (Table $table): void {
              $table->filtersLayout(FiltersLayout::AboveContentCollapsible)
+diff --git a/app/Providers/Filament/AdminPanelProvider.php b/app/Providers/Filament/AdminPanelProvider.php
+index b0420fe..d06f102 100644
+--- a/app/Providers/Filament/AdminPanelProvider.php
++++ b/app/Providers/Filament/AdminPanelProvider.php
+@@ -56,7 +56,7 @@ public function panel(Panel $panel): Panel
+ 
+             ])
+             ->brandName(name: config('app.name'))
+-            ->brandLogo(asset("storage/bandit.png"))
++            ->brandLogo('storage/bandit.png')
+             ->profile(isSimple: false)
+             ->colors([
+                 'primary' => Color::{config('settings.theme_color')},
+@@ -101,7 +101,7 @@ public function panel(Panel $panel): Panel
+                 FilamentAuthenticationLogPlugin::make(),
+                 EasyFooterPlugin::make()
+                     ->withGithub()
+-                    ->withLogo(asset("storage/bandit.png"), "https://discount-bandit.cybrarist.com", "v-4.0"),
++                    ->withLogo('storage/bandit.png', "https://discount-bandit.cybrarist.com", "v-4.0"),
+                 BreezyCore::make()
+                     ->myProfile()
+                     ->enableTwoFactorAuthentication()
 diff --git a/bootstrap/app.php b/bootstrap/app.php
 index 238feb0..898e196 100644
 --- a/bootstrap/app.php
