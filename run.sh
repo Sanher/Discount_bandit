@@ -57,6 +57,7 @@ ensure_directory() {
 ensure_state() {
   ensure_directory "${STATE_DIR}"
   ensure_directory "${LOG_DIR}"
+  ensure_directory "${STORAGE_DIR}/logs"
   ensure_directory /app/database
 
   if [ ! -d "${STORAGE_DIR}" ]; then
@@ -104,8 +105,9 @@ patch_supervisor_logs() {
 }
 
 start_log_tail() {
-  # The upstream stack logs to files; mirror them to stdout for HA visibility.
+  # Mirror both the upstream process logs and Laravel app logs to stdout for HA visibility.
   touch \
+    "${STORAGE_DIR}/logs/laravel.log" \
     "${LOG_DIR}/supervisord_stdout.log" \
     "${LOG_DIR}/octane_stdout.log" \
     "${LOG_DIR}/octane_stderr.log" \
@@ -113,6 +115,7 @@ start_log_tail() {
     "${LOG_DIR}/default_worker.log"
 
   tail -q -n 0 -F \
+    "${STORAGE_DIR}/logs/laravel.log" \
     "${LOG_DIR}/supervisord_stdout.log" \
     "${LOG_DIR}/octane_stdout.log" \
     "${LOG_DIR}/octane_stderr.log" \

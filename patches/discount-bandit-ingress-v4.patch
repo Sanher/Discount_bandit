@@ -1,63 +1,26 @@
-diff --git a/app/Http/Middleware/TrustIngressPath.php b/app/Http/Middleware/TrustIngressPath.php
-new file mode 100644
-index 0000000..86dfe52
---- /dev/null
-+++ b/app/Http/Middleware/TrustIngressPath.php
-@@ -0,0 +1,45 @@
-+<?php
-+
-+namespace App\Http\Middleware;
-+
-+use Closure;
-+use Illuminate\Http\Request;
-+use Illuminate\Support\Facades\URL;
-+use Symfony\Component\HttpFoundation\Response;
-+
-+class TrustIngressPath
-+{
-+    public function handle(Request $request, Closure $next): Response
-+    {
-+        $this->applyBaseUrl($request);
-+
-+        return $next($request);
-+    }
-+
-+    protected function applyBaseUrl(Request $request): void
-+    {
-+        $scheme = $request->headers->get('X-Forwarded-Proto') ?: $request->getScheme();
-+        $host = $request->headers->get('X-Forwarded-Host') ?: $request->getHttpHost();
-+        $ingressPath = trim((string) $request->headers->get('X-Ingress-Path', ''), " \t\n\r\0\x0B");
-+
-+        if ($host === '') {
-+            return;
-+        }
-+
-+        $normalizedIngressPath = $ingressPath === ''
-+            ? ''
-+            : '/'.trim($ingressPath, '/');
-+
-+        $baseUrl = rtrim(sprintf('%s://%s%s', $scheme, $host, $normalizedIngressPath), '/');
-+
-+        URL::forceRootUrl($baseUrl);
-+        URL::forceScheme($scheme);
-+
-+        config([
-+            'app.url' => $baseUrl,
-+            'app.asset_url' => $baseUrl,
-+            'filesystems.disks.public.url' => $baseUrl.'/storage',
-+            'filesystems.disks.store.url' => $baseUrl.'/storage/store',
-+        ]);
-+    }
-+}
 diff --git a/app/Filament/Pages/Auth/Login.php b/app/Filament/Pages/Auth/Login.php
-index 7047037..a5aaf3f 100644
+index 7047037..4d44e4b 100644
 --- a/app/Filament/Pages/Auth/Login.php
 +++ b/app/Filament/Pages/Auth/Login.php
-@@ -9,9 +9,11 @@ class Login extends \Filament\Auth\Pages\Login
+@@ -3,15 +3,25 @@
+ namespace App\Filament\Pages\Auth;
+ 
+ use App\Models\User;
++use Illuminate\Support\Facades\Log;
+ 
+ class Login extends \Filament\Auth\Pages\Login
+ {
      public function mount(): void
      {
          if (! User::exists()) {
 -            redirect()->to('/register');
++            Log::info('Discount Bandit auth redirect', [
++                'page' => 'login',
++                'reason' => 'missing_user',
++                'target' => route('filament.admin.auth.register'),
++                'users_count' => User::count(),
++            ]);
++
 +            $this->redirect(route('filament.admin.auth.register'), navigate: true);
 +
 +            return;
@@ -68,14 +31,29 @@ index 7047037..a5aaf3f 100644
      }
  }
 diff --git a/app/Filament/Pages/Auth/Register.php b/app/Filament/Pages/Auth/Register.php
-index fc5cd0e..36eb464 100644
+index fc5cd0e..61b6692 100644
 --- a/app/Filament/Pages/Auth/Register.php
 +++ b/app/Filament/Pages/Auth/Register.php
-@@ -13,17 +13,19 @@ class Register extends \Filament\Auth\Pages\Register
+@@ -6,6 +6,7 @@
+ use App\Models\User;
+ use Filament\Actions\Action;
+ use Filament\Forms\Components\Placeholder;
++use Illuminate\Support\Facades\Log;
+ 
+ class Register extends \Filament\Auth\Pages\Register
+ {
+@@ -13,17 +14,35 @@ class Register extends \Filament\Auth\Pages\Register
      public function mount(): void
      {
          if (User::exists()) {
 -            redirect()->to('/login');
++            Log::info('Discount Bandit auth redirect', [
++                'page' => 'register',
++                'reason' => 'user_exists',
++                'target' => route('filament.admin.auth.login'),
++                'users_count' => User::count(),
++            ]);
++
 +            $this->redirect(route('filament.admin.auth.login'), navigate: true);
 +
 +            return;
@@ -90,10 +68,124 @@ index fc5cd0e..36eb464 100644
          if (User::count() > 0) {
              return Action::make('redirect')
 -                ->action(fn () => redirect()->to('/'));
-+                ->action(fn () => $this->redirect(url('/'), navigate: true));
++                ->action(function (): void {
++                    Log::info('Discount Bandit auth redirect', [
++                        'page' => 'register',
++                        'reason' => 'register_action_with_existing_user',
++                        'target' => url('/'),
++                        'users_count' => User::count(),
++                    ]);
++
++                    $this->redirect(url('/'), navigate: true);
++                });
          }
  
          return parent::getRegisterFormAction();
+diff --git a/app/Http/Middleware/TrustIngressPath.php b/app/Http/Middleware/TrustIngressPath.php
+new file mode 100644
+index 0000000..600a9a2
+--- /dev/null
++++ b/app/Http/Middleware/TrustIngressPath.php
+@@ -0,0 +1,99 @@
++<?php
++
++namespace App\Http\Middleware;
++
++use App\Models\User;
++use Closure;
++use Illuminate\Http\Request;
++use Illuminate\Support\Facades\Log;
++use Illuminate\Support\Facades\URL;
++use Symfony\Component\HttpFoundation\Response;
++
++class TrustIngressPath
++{
++    public function handle(Request $request, Closure $next): Response
++    {
++        $context = $this->resolveIngressContext($request);
++
++        if ($context !== null) {
++            $this->applyBaseUrl($context['base_url']);
++        }
++
++        if ($context !== null && $this->shouldLogRequest($request)) {
++            Log::info('Discount Bandit ingress request', $this->buildLogContext($request, $context));
++        }
++
++        $response = $next($request);
++
++        if ($context !== null && $this->shouldLogRequest($request)) {
++            Log::info('Discount Bandit ingress response', array_merge(
++                $this->buildLogContext($request, $context),
++                [
++                    'status' => $response->getStatusCode(),
++                    'location' => $response->headers->get('Location'),
++                    'is_redirect' => $response->isRedirection(),
++                ]
++            ));
++        }
++
++        return $response;
++    }
++
++    protected function resolveIngressContext(Request $request): ?array
++    {
++        $scheme = $request->headers->get('X-Forwarded-Proto') ?: $request->getScheme();
++        $host = $request->headers->get('X-Forwarded-Host') ?: $request->getHttpHost();
++        $ingressPath = trim((string) $request->headers->get('X-Ingress-Path', ''), " \t\n\r\0\x0B");
++
++        if ($host === '') {
++            return null;
++        }
++
++        $normalizedIngressPath = $ingressPath === ''
++            ? ''
++            : '/'.trim($ingressPath, '/');
++
++        return [
++            'base_url' => rtrim(sprintf('%s://%s%s', $scheme, $host, $normalizedIngressPath), '/'),
++            'host' => $host,
++            'ingress_path' => $normalizedIngressPath,
++            'scheme' => $scheme,
++        ];
++    }
++
++    protected function applyBaseUrl(string $baseUrl): void
++    {
++        URL::forceRootUrl($baseUrl);
++        URL::forceScheme(parse_url($baseUrl, PHP_URL_SCHEME) ?: 'http');
++
++        config([
++            'app.url' => $baseUrl,
++            'app.asset_url' => $baseUrl,
++            'filesystems.disks.public.url' => $baseUrl.'/storage',
++            'filesystems.disks.store.url' => $baseUrl.'/storage/store',
++        ]);
++    }
++
++    protected function shouldLogRequest(Request $request): bool
++    {
++        return $request->is('login')
++            || $request->is('register')
++            || $request->is('livewire/*');
++    }
++
++    protected function buildLogContext(Request $request, array $context): array
++    {
++        return [
++            'method' => $request->getMethod(),
++            'path' => '/'.ltrim($request->path(), '/'),
++            'route_name' => $request->route()?->getName(),
++            'host' => $context['host'],
++            'scheme' => $context['scheme'],
++            'ingress_path' => $context['ingress_path'],
++            'base_url' => $context['base_url'],
++            'users_exist' => User::exists(),
++            'authenticated' => $request->user() !== null,
++            'has_livewire_header' => $request->headers->has('X-Livewire'),
++        ];
++    }
++}
 diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
 index e788a8c..61999be 100644
 --- a/app/Providers/AppServiceProvider.php
