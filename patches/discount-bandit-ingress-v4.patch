@@ -286,23 +286,25 @@ index 0000000..6ad62de
 +}
 diff --git a/app/Http/Responses/Auth/LoginResponse.php b/app/Http/Responses/Auth/LoginResponse.php
 new file mode 100644
-index 0000000..14b2487
+index 0000000..870fdb4
 --- /dev/null
 +++ b/app/Http/Responses/Auth/LoginResponse.php
-@@ -0,0 +1,24 @@
+@@ -0,0 +1,26 @@
 +<?php
 +
 +namespace App\Http\Responses\Auth;
 +
-+use Filament\Auth\Http\Responses\Contracts\LoginResponse as LoginResponseContract;
++use App\Filament\Resources\Products\ProductResource;
++use Filament\Auth\Http\Responses\LoginResponse as BaseLoginResponse;
 +use Illuminate\Http\RedirectResponse;
 +use Illuminate\Support\Facades\Log;
++use Livewire\Features\SupportRedirects\Redirector;
 +
-+class LoginResponse implements LoginResponseContract
++class LoginResponse extends BaseLoginResponse
 +{
-+    public function toResponse($request): RedirectResponse
++    public function toResponse($request): RedirectResponse|Redirector
 +    {
-+        $target = route('filament.admin.resources.products.index');
++        $target = ProductResource::getUrl(panel: 'admin');
 +
 +        Log::info('Discount Bandit auth redirect', [
 +            'page' => 'login_response',
@@ -311,7 +313,7 @@ index 0000000..14b2487
 +            'authenticated' => auth()->check(),
 +        ]);
 +
-+        return redirect()->to($target);
++        return redirect()->intended($target);
 +    }
 +}
 diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
