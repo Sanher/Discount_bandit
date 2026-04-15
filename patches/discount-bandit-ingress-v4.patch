@@ -1,13 +1,12 @@
 diff --git a/app/Filament/Pages/Auth/Login.php b/app/Filament/Pages/Auth/Login.php
-index 7047037..dba1193 100644
+index 7047037..634f7bc 100644
 --- a/app/Filament/Pages/Auth/Login.php
 +++ b/app/Filament/Pages/Auth/Login.php
-@@ -3,15 +3,66 @@
+@@ -3,15 +3,42 @@
  namespace App\Filament\Pages\Auth;
  
  use App\Models\User;
 +use Filament\Facades\Filament;
-+use Filament\Auth\Http\Responses\Contracts\LoginResponse;
 +use Illuminate\Support\Facades\Log;
  
  class Login extends \Filament\Auth\Pages\Login
@@ -47,29 +46,6 @@ index 7047037..dba1193 100644
 +
 +        parent::mount();
      }
-+
-+    public function authenticate(): ?LoginResponse
-+    {
-+        $response = parent::authenticate();
-+
-+        if (! Filament::auth()->check()) {
-+            return $response;
-+        }
-+
-+        $target = route('filament.admin.resources.products.index');
-+
-+        Log::info('Discount Bandit auth redirect', [
-+            'page' => 'login',
-+            'reason' => 'login_success',
-+            'target' => $target,
-+            'users_count' => User::count(),
-+            'authenticated' => true,
-+        ]);
-+
-+        $this->redirect($target, navigate: true);
-+
-+        return null;
-+    }
  }
 diff --git a/app/Filament/Pages/Auth/Register.php b/app/Filament/Pages/Auth/Register.php
 index fc5cd0e..0fb84bc 100644
@@ -308,11 +284,48 @@ index 0000000..6ad62de
 +        ];
 +    }
 +}
+diff --git a/app/Http/Responses/Auth/LoginResponse.php b/app/Http/Responses/Auth/LoginResponse.php
+new file mode 100644
+index 0000000..14b2487
+--- /dev/null
++++ b/app/Http/Responses/Auth/LoginResponse.php
+@@ -0,0 +1,24 @@
++<?php
++
++namespace App\Http\Responses\Auth;
++
++use Filament\Auth\Http\Responses\Contracts\LoginResponse as LoginResponseContract;
++use Illuminate\Http\RedirectResponse;
++use Illuminate\Support\Facades\Log;
++
++class LoginResponse implements LoginResponseContract
++{
++    public function toResponse($request): RedirectResponse
++    {
++        $target = route('filament.admin.resources.products.index');
++
++        Log::info('Discount Bandit auth redirect', [
++            'page' => 'login_response',
++            'reason' => 'login_success_response',
++            'target' => $target,
++            'authenticated' => auth()->check(),
++        ]);
++
++        return redirect()->to($target);
++    }
++}
 diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
-index e788a8c..61999be 100644
+index e788a8c..aaed7e8 100644
 --- a/app/Providers/AppServiceProvider.php
 +++ b/app/Providers/AppServiceProvider.php
-@@ -7,8 +7,10 @@
+@@ -2,26 +2,40 @@
+ 
+ namespace App\Providers;
+ 
++use App\Http\Responses\Auth\LoginResponse as IngressLoginResponse;
++use Filament\Auth\Http\Responses\Contracts\LoginResponse as LoginResponseContract;
+ use Filament\Support\Facades\FilamentView;
+ use Filament\Tables\Enums\FiltersLayout;
  use Filament\Tables\Enums\PaginationMode;
  use Filament\Tables\Table;
  use Filament\View\PanelsRenderHook;
@@ -323,20 +336,30 @@ index e788a8c..61999be 100644
  
  class AppServiceProvider extends ServiceProvider
  {
-@@ -21,6 +23,13 @@ public function register(): void {}
+     /**
+      * Register any application services.
+      */
+-    public function register(): void {}
++    public function register(): void
++    {
++        $this->app->bind(LoginResponseContract::class, IngressLoginResponse::class);
++    }
+ 
+     /**
       * Bootstrap any application services.
       */
      public function boot(): void {
 +        Livewire::setScriptRoute(function ($handle) {
 +            return Route::get('/livewire/livewire.js', $handle);
 +        });
-+
+ 
 +        Livewire::setUpdateRoute(function ($handle) {
 +            return Route::post('/livewire/update', $handle);
 +        });
- 
++
          Table::configureUsing(function (Table $table): void {
              $table->filtersLayout(FiltersLayout::AboveContentCollapsible)
+                 ->paginationMode(PaginationMode::Cursor)
 diff --git a/app/Providers/Filament/AdminPanelProvider.php b/app/Providers/Filament/AdminPanelProvider.php
 index b0420fe..d06f102 100644
 --- a/app/Providers/Filament/AdminPanelProvider.php
