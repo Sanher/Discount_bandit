@@ -320,7 +320,7 @@ diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProv
 index e788a8c..aaed7e8 100644
 --- a/app/Providers/AppServiceProvider.php
 +++ b/app/Providers/AppServiceProvider.php
-@@ -2,26 +2,40 @@
+@@ -2,26 +2,41 @@
  
  namespace App\Providers;
  
@@ -356,7 +356,8 @@ index e788a8c..aaed7e8 100644
 +        });
  
 +        Livewire::setUpdateRoute(function ($handle) {
-+            return Route::post('/livewire/update', $handle);
++            return Route::post('/livewire/update', $handle)
++                ->middleware('web');
 +        });
 +
          Table::configureUsing(function (Table $table): void {
