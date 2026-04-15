@@ -31,7 +31,7 @@ index 7047037..4d44e4b 100644
      }
  }
 diff --git a/app/Filament/Pages/Auth/Register.php b/app/Filament/Pages/Auth/Register.php
-index fc5cd0e..61b6692 100644
+index fc5cd0e..0fb84bc 100644
 --- a/app/Filament/Pages/Auth/Register.php
 +++ b/app/Filament/Pages/Auth/Register.php
 @@ -6,6 +6,7 @@
@@ -42,7 +42,7 @@ index fc5cd0e..61b6692 100644
  
  class Register extends \Filament\Auth\Pages\Register
  {
-@@ -13,17 +14,35 @@ class Register extends \Filament\Auth\Pages\Register
+@@ -13,22 +14,54 @@ class Register extends \Filament\Auth\Pages\Register
      public function mount(): void
      {
          if (User::exists()) {
@@ -72,15 +72,34 @@ index fc5cd0e..61b6692 100644
 +                    Log::info('Discount Bandit auth redirect', [
 +                        'page' => 'register',
 +                        'reason' => 'register_action_with_existing_user',
-+                        'target' => url('/'),
++                        'target' => route('filament.admin.auth.login'),
 +                        'users_count' => User::count(),
 +                    ]);
 +
-+                    $this->redirect(url('/'), navigate: true);
++                    $this->redirect(route('filament.admin.auth.login'), navigate: true);
 +                });
          }
  
          return parent::getRegisterFormAction();
+     }
+ 
++    protected function getRedirectUrl(): string
++    {
++        $target = route('filament.admin.auth.login');
++
++        Log::info('Discount Bandit auth redirect', [
++            'page' => 'register',
++            'reason' => 'register_success',
++            'target' => $target,
++            'users_count' => User::count(),
++        ]);
++
++        return $target;
++    }
++
+     protected function mutateFormDataBeforeRegister(array $data): array
+     {
+         $data['role'] = RoleEnum::Admin->value;
 diff --git a/app/Http/Middleware/TrustIngressPath.php b/app/Http/Middleware/TrustIngressPath.php
 new file mode 100644
 index 0000000..6ad62de
