@@ -86,7 +86,7 @@ new file mode 100644
 index 0000000..6ad62de
 --- /dev/null
 +++ b/app/Http/Middleware/TrustIngressPath.php
-@@ -0,0 +1,159 @@
+@@ -0,0 +1,161 @@
 +<?php
 +
 +namespace App\Http\Middleware;
@@ -163,6 +163,7 @@ index 0000000..6ad62de
 +        config([
 +            'app.url' => $baseUrl,
 +            'app.asset_url' => $baseUrl,
++            'livewire.asset_url' => $baseUrl.'/livewire/livewire.js',
 +            'filesystems.disks.public.url' => $baseUrl.'/storage',
 +            'filesystems.disks.store.url' => $baseUrl.'/storage/store',
 +        ]);
@@ -240,6 +241,7 @@ index 0000000..6ad62de
 +            'scheme' => $context['scheme'],
 +            'ingress_path' => $context['ingress_path'],
 +            'base_url' => $context['base_url'],
++            'livewire_asset_url' => config('livewire.asset_url'),
 +            'users_exist' => User::exists(),
 +            'authenticated' => $request->user() !== null,
 +            'has_livewire_header' => $request->headers->has('X-Livewire'),
