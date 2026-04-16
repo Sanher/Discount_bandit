@@ -122,7 +122,7 @@ new file mode 100644
 index 0000000..6ad62de
 --- /dev/null
 +++ b/app/Http/Middleware/TrustIngressPath.php
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,185 @@
 +<?php
 +
 +namespace App\Http\Middleware;
@@ -219,7 +219,8 @@ index 0000000..6ad62de
 +        return $request->is('login')
 +            || $request->is('register')
 +            || $request->is('livewire/*')
-+            || $request->is('products*');
++            || $request->is('products*')
++            || $request->path() === '/';
 +    }
 +
 +    protected function rewriteIngressAwareMarkup(Response $response, array $context): void
@@ -249,10 +250,14 @@ index 0000000..6ad62de
 +                $hostRoot.'/livewire/',
 +                $hostRoot.'/storage/',
 +                'http://localhost/storage/',
++                ' href="'.$hostRoot.'/"',
++                " href='".$hostRoot."/'",
 +                '"/livewire/',
 +                '"/storage/',
 +                "'/livewire/",
 +                "'/storage/",
++                ' href="/"',
++                " href='/'",
 +                ' src="/livewire/',
 +                ' src="/storage/',
 +                ' data-update-uri="/livewire/',
@@ -261,10 +266,14 @@ index 0000000..6ad62de
 +                $baseUrl.'/livewire/',
 +                $baseUrl.'/storage/',
 +                $baseUrl.'/storage/',
++                ' href="'.$baseUrl.'/"',
++                " href='".$baseUrl."/'",
 +                '"'.$ingressPath.'/livewire/',
 +                '"'.$ingressPath.'/storage/',
 +                "'".$ingressPath.'/livewire/',
 +                "'".$ingressPath.'/storage/',
++                ' href="'.$baseUrl.'/"',
++                " href='".$baseUrl."/'",
 +                ' src="'.$ingressPath.'/livewire/',
 +                ' src="'.$ingressPath.'/storage/',
 +                ' data-update-uri="'.$ingressPath.'/livewire/',
