@@ -122,7 +122,7 @@ new file mode 100644
 index 0000000..6ad62de
 --- /dev/null
 +++ b/app/Http/Middleware/TrustIngressPath.php
-@@ -0,0 +1,185 @@
+@@ -0,0 +1,190 @@
 +<?php
 +
 +namespace App\Http\Middleware;
@@ -240,6 +240,7 @@ index 0000000..6ad62de
 +        $ingressPath = $context['ingress_path'];
 +        $baseUrl = $context['base_url'];
 +        $hostRoot = $context['scheme'].'://'.$context['host'];
++        $homeUrl = $baseUrl.'/products';
 +
 +        if ($ingressPath === '') {
 +            return;
@@ -251,7 +252,9 @@ index 0000000..6ad62de
 +                $hostRoot.'/storage/',
 +                'http://localhost/storage/',
 +                ' href="'.$hostRoot.'/"',
++                ' href="'.$hostRoot.'"',
 +                " href='".$hostRoot."/'",
++                " href='".$hostRoot."'",
 +                '"/livewire/',
 +                '"/storage/',
 +                "'/livewire/",
@@ -266,14 +269,16 @@ index 0000000..6ad62de
 +                $baseUrl.'/livewire/',
 +                $baseUrl.'/storage/',
 +                $baseUrl.'/storage/',
-+                ' href="'.$baseUrl.'/"',
-+                " href='".$baseUrl."/'",
++                ' href="'.$homeUrl.'"',
++                ' href="'.$homeUrl.'"',
++                " href='".$homeUrl."'",
++                " href='".$homeUrl."'",
 +                '"'.$ingressPath.'/livewire/',
 +                '"'.$ingressPath.'/storage/',
 +                "'".$ingressPath.'/livewire/',
 +                "'".$ingressPath.'/storage/',
-+                ' href="'.$baseUrl.'/"',
-+                " href='".$baseUrl."/'",
++                ' href="'.$homeUrl.'"',
++                " href='".$homeUrl."'",
 +                ' src="'.$ingressPath.'/livewire/',
 +                ' src="'.$ingressPath.'/storage/',
 +                ' data-update-uri="'.$ingressPath.'/livewire/',
@@ -398,7 +403,7 @@ index b0420fe..d06f102 100644
              ])
              ->brandName(name: config('app.name'))
 -            ->brandLogo(asset("storage/bandit.png"))
-+            ->brandLogo('storage/bandit.png')
++            ->brandLogo(asset("storage/bandit.png"))
              ->profile(isSimple: false)
              ->colors([
                  'primary' => Color::{config('settings.theme_color')},
@@ -407,7 +412,7 @@ index b0420fe..d06f102 100644
                  EasyFooterPlugin::make()
                      ->withGithub()
 -                    ->withLogo(asset("storage/bandit.png"), "https://discount-bandit.cybrarist.com", "v-4.0"),
-+                    ->withLogo('storage/bandit.png', "https://discount-bandit.cybrarist.com", "v-4.0"),
++                    ->withLogo(asset("storage/bandit.png"), "https://discount-bandit.cybrarist.com", "v-4.0"),
                  BreezyCore::make()
                      ->myProfile()
                      ->enableTwoFactorAuthentication()
