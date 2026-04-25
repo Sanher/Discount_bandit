@@ -85,18 +85,20 @@ ensure_directory() {
   [ -d "${directory}" ] || mkdir -p "${directory}"
 }
 
+seed_storage_from_upstream() {
+  if [ -d /app/storage ]; then
+    ensure_directory "${STORAGE_DIR}"
+    cp -an /app/storage/. "${STORAGE_DIR}/"
+  fi
+}
+
 ensure_state() {
   ensure_directory "${STATE_DIR}"
   ensure_directory "${LOG_DIR}"
-  ensure_directory "${STORAGE_DIR}/logs"
   ensure_directory /app/database
 
-  if [ ! -d "${STORAGE_DIR}" ]; then
-    mkdir -p "${STORAGE_DIR}"
-    if [ -d /app/storage ]; then
-      cp -a /app/storage/. "${STORAGE_DIR}/"
-    fi
-  fi
+  seed_storage_from_upstream
+  ensure_directory "${STORAGE_DIR}/logs"
 
   if [ ! -f "${DB_FILE}" ]; then
     touch "${DB_FILE}"
