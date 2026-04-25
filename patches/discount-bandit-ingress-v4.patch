@@ -1,5 +1,213 @@
+diff --git a/app/Classes/Crawler/ChromiumCrawler.php b/app/Classes/Crawler/ChromiumCrawler.php
+index da96e3c..6acb26a 100644
+--- a/app/Classes/Crawler/ChromiumCrawler.php
++++ b/app/Classes/Crawler/ChromiumCrawler.php
+@@ -10,8 +10,8 @@ use HeadlessChromium\Exception\CommunicationException;
+ use HeadlessChromium\Exception\NoResponseAvailable;
+ use HeadlessChromium\Exception\OperationTimedOut;
+ use HeadlessChromium\Page;
++use Illuminate\Support\Facades\File;
+ use Illuminate\Support\Facades\Log;
+-use Illuminate\Support\Facades\Process;
+ use Illuminate\Support\Str;
+ use InvalidArgumentException;
+
+@@ -27,62 +27,78 @@ class ChromiumCrawler
+         int $timeout_ms = 5000,
+         string $page_event = Page::NETWORK_IDLE,
+     ) {
+-        // path to the file to store websocket's uri
+-        $socketFile = '/tmp/chrome-php-demo-socket';
++        $keepAlive = filter_var(env('DISCOUNT_BANDIT_CHROMIUM_KEEP_ALIVE', false), FILTER_VALIDATE_BOOL);
++        $enableImages = filter_var(env('DISCOUNT_BANDIT_CHROMIUM_ENABLE_IMAGES', false), FILTER_VALIDATE_BOOL);
++        $userDataDir = $keepAlive
++            ? env('DISCOUNT_BANDIT_CHROMIUM_USER_DATA_DIR', '/tmp/discount-bandit-chromium-profile')
++            : sys_get_temp_dir().'/discount-bandit-chromium-'.getmypid().'-'.bin2hex(random_bytes(6));
++        $socketFile = env('DISCOUNT_BANDIT_CHROMIUM_SOCKET_FILE', '/tmp/discount-bandit-chromium-socket');
+
+-        if (! file_exists($socketFile)) {
+-            file_put_contents($socketFile, '');
+-        }
+-
+-        $socket = file_get_contents($socketFile);
++        File::ensureDirectoryExists($userDataDir);
+
+         $options = [
+             //
+             'connectionDelay' => 1.32,
+-            'headless' => false,
++            'enableImages' => $enableImages,
++            'headless' => true,
+             'noSandbox' => true,
+             "headers" => $extra_headers,
++            'keepAlive' => $keepAlive,
++            'userDataDir' => $userDataDir,
+             'customFlags' => [
+                 '--lang=en-US',
+                 '--disable-blink-features=AutomationControlled',
++                '--disable-background-networking',
+                 '--deny-permission-prompts=true',
+                 '--disable-blink-features=AutomationControlled',
+                 '--disable-web-security',
++                '--disable-extensions',
+                 '--disable-features=IsolateOrigins,site-per-process',
++                '--disable-sync',
+                 '--disable-site-isolation-trials',
+                 '--ignore-certificate-errors',
++                '--metrics-recording-only',
++                '--mute-audio',
+                 '--no-first-run',
+                 '--no-default-browser-check',
++                '--no-zygote',
+                 '--no-sandbox',
+                 '--test-type',
+                 '--enable-features=NetworkService,NetworkServiceInProcess',
+                 '--window-size=1920,1080',
+             ],
+             'disableNotifications' => true,
+-            'keepAlive' => true,
+             'ignoreHTTPSErrors' => true,
+             'ignoreCertificateErrors' => true,
+             'stealth' => true,
+             'bypassCSP' => true,
+         ];
+
+-        try {
+-            $browser = BrowserFactory::connectToBrowser($socket);
+-        } catch (BrowserConnectionFailed|InvalidArgumentException $e) {
+-            Log::info('New Chrome instance');
+-            Log::info($e->getMessage());
+-            $browserType = app()->isProduction() ? 'chromium' : null;
++        $browser = null;
++        $page = null;
+
+-            // just in case there is a chromium process running on the server
+-            Process::run("killall chromium");
++        if ($keepAlive && file_exists($socketFile)) {
++            try {
++                $browser = BrowserFactory::connectToBrowser((string) file_get_contents($socketFile));
++            } catch (BrowserConnectionFailed|InvalidArgumentException $e) {
++                Log::warning('Could not reconnect to existing Chrome instance; starting a new one.', [
++                    'message' => $e->getMessage(),
++                ]);
++            }
++        }
++
++        if ($browser === null) {
++            Log::debug('New Chrome instance', ['keep_alive' => $keepAlive]);
++            $browserType = app()->isProduction() ? 'chromium' : null;
+
+-            // The browser was probably closed, start it again
+             $browser_factory = new BrowserFactory($browserType);
+
+             $browser = $browser_factory
+                 ->createBrowser($options);
+-            // save the uri to be able to connect again to the browser
+-            file_put_contents($socketFile, $browser->getSocketUri(), LOCK_EX);
++
++            if ($keepAlive) {
++                file_put_contents($socketFile, $browser->getSocketUri(), LOCK_EX);
++            }
+         }
+
+         try {
+@@ -101,16 +117,36 @@ class ChromiumCrawler
+         } catch (NoResponseAvailable $e) {
+             Log::error("No response available");
+         } catch (OperationTimedOut $e) {
+-            $this->dom = HTMLDocument::createFromString($page->getHtml(), LIBXML_NOERROR);
++            if ($page !== null) {
++                $this->dom = HTMLDocument::createFromString($page->getHtml(), LIBXML_NOERROR);
++            }
+         } catch (Exception $exception) {
+             Log::error("Crawling using chrome");
+             Log::error($exception->getMessage());
++        } finally {
++            if ($page !== null) {
++                try {
++                    $page->close();
++                } catch (CommunicationException) {
++                    Log::error("Couldn't close the page");
++                } catch (Exception) {
++                    // The browser may already be gone after navigation errors.
++                }
++            }
++
++            if (! $keepAlive && $browser !== null) {
++                try {
++                    $browser->close();
++                } catch (Exception) {
++                    // The process may already have exited after a failed launch.
++                }
++
++                File::deleteDirectory($userDataDir);
++            }
+         }
+
+-        try {
+-            $page?->close();
+-        } catch (CommunicationException $e) {
+-            Log::error("Couldn't close the page");
++        if (! isset($this->dom)) {
++            $this->dom = HTMLDocument::createFromString('', LIBXML_NOERROR);
+         }
+     }
+
+diff --git a/app/Classes/CustomStoreTemplate.php b/app/Classes/CustomStoreTemplate.php
+index 55c2278..4086090 100644
+--- a/app/Classes/CustomStoreTemplate.php
++++ b/app/Classes/CustomStoreTemplate.php
+@@ -113,7 +113,9 @@ class CustomStoreTemplate
+                 user_agent: $this->user_agent,
+             )->dom;
+         }
+-        $this->dom->saveHTMLFile('response.html');
++        if (filter_var(env('DISCOUNT_BANDIT_SAVE_CRAWL_RESPONSE', false), FILTER_VALIDATE_BOOL)) {
++            $this->dom->saveHTMLFile(storage_path('logs/response.html'));
++        }
+
+         $this->schema = new SchemaParser($this->dom)->schema;
+
+diff --git a/app/Classes/StoreTemplate.php b/app/Classes/StoreTemplate.php
+index 1dd7829..b60eef0 100644
+--- a/app/Classes/StoreTemplate.php
++++ b/app/Classes/StoreTemplate.php
+@@ -102,7 +102,9 @@ abstract class StoreTemplate
+                 user_agent: $this->user_agent,
+             )->dom;
+         }
+-        $this->dom->saveHTMLFile('response.html');
++        if (filter_var(env('DISCOUNT_BANDIT_SAVE_CRAWL_RESPONSE', false), FILTER_VALIDATE_BOOL)) {
++            $this->dom->saveHTMLFile(storage_path('logs/response.html'));
++        }
+
+         $this->schema = new SchemaParser($this->dom)->schema;
+     }
+diff --git a/app/Console/Commands/DiscountFillSupervisorWorkersCommand.php b/app/Console/Commands/DiscountFillSupervisorWorkersCommand.php
+index b2cd79b..f00d85f 100644
+--- a/app/Console/Commands/DiscountFillSupervisorWorkersCommand.php
++++ b/app/Console/Commands/DiscountFillSupervisorWorkersCommand.php
+@@ -45,14 +45,16 @@ class DiscountFillSupervisorWorkersCommand extends Command
+ [program:laravel-worker-{$store->id}]
+ process_name=%(program_name)s_%(process_num)02d
+ user=root
+-command=php artisan queue:work --queue={$store->slug} --max-time=300 --sleep=1 --tries=1
++command=php artisan queue:work --queue={$store->slug} --max-time=180 --max-jobs=25 --memory=192 --timeout=60 --sleep=2 --tries=1
+ autostart=true
+ autorestart=true
+ stopasgroup=true
+ killasgroup=true
+ numprocs=1
+ redirect_stderr=true
+-stdout_logfile=/var/log/worker.log
++stdout_logfile=/logs/worker-{$store->slug}.log
++stdout_logfile_maxbytes=5MB
++stdout_logfile_backups=2
+ stopwaitsecs=300
+                     ");
+
 diff --git a/app/Filament/Pages/Auth/Login.php b/app/Filament/Pages/Auth/Login.php
-index 7047037..634f7bc 100644
+index 7047037..f4cd3d6 100644
 --- a/app/Filament/Pages/Auth/Login.php
 +++ b/app/Filament/Pages/Auth/Login.php
 @@ -3,15 +3,42 @@
@@ -25,9 +233,8 @@ index 7047037..634f7bc 100644
 +            $this->redirect(route('filament.admin.auth.register'), navigate: true);
 +
 +            return;
-         }
-
--        parent::mount(); // TODO: Change the autogenerated stub
++        }
++
 +        if (Filament::auth()->check()) {
 +            $target = route('filament.admin.resources.products.index');
 +
@@ -42,8 +249,9 @@ index 7047037..634f7bc 100644
 +            $this->redirect($target, navigate: true);
 +
 +            return;
-+        }
-+
+         }
+
+-        parent::mount(); // TODO: Change the autogenerated stub
 +        parent::mount();
      }
  }
@@ -51,7 +259,7 @@ diff --git a/app/Filament/Pages/Auth/Register.php b/app/Filament/Pages/Auth/Regi
 index fc5cd0e..0fb84bc 100644
 --- a/app/Filament/Pages/Auth/Register.php
 +++ b/app/Filament/Pages/Auth/Register.php
-@@ -6,6 +6,7 @@
+@@ -6,6 +6,7 @@ use App\Enums\RoleEnum;
  use App\Models\User;
  use Filament\Actions\Action;
  use Filament\Forms\Components\Placeholder;
@@ -119,7 +327,7 @@ index fc5cd0e..0fb84bc 100644
          $data['role'] = RoleEnum::Admin->value;
 diff --git a/app/Http/Middleware/TrustIngressPath.php b/app/Http/Middleware/TrustIngressPath.php
 new file mode 100644
-index 0000000..6ad62de
+index 0000000..3f550c1
 --- /dev/null
 +++ b/app/Http/Middleware/TrustIngressPath.php
 @@ -0,0 +1,190 @@
@@ -315,7 +523,7 @@ index 0000000..6ad62de
 +}
 diff --git a/app/Http/Responses/Auth/LoginResponse.php b/app/Http/Responses/Auth/LoginResponse.php
 new file mode 100644
-index 0000000..870fdb4
+index 0000000..d7795c0
 --- /dev/null
 +++ b/app/Http/Responses/Auth/LoginResponse.php
 @@ -0,0 +1,28 @@
@@ -348,10 +556,10 @@ index 0000000..870fdb4
 +    }
 +}
 diff --git a/app/Providers/AppServiceProvider.php b/app/Providers/AppServiceProvider.php
-index e788a8c..aaed7e8 100644
+index e788a8c..1e3286a 100644
 --- a/app/Providers/AppServiceProvider.php
 +++ b/app/Providers/AppServiceProvider.php
-@@ -2,26 +2,41 @@
+@@ -2,25 +2,40 @@
 
  namespace App\Providers;
 
@@ -385,42 +593,19 @@ index e788a8c..aaed7e8 100644
 +        Livewire::setScriptRoute(function ($handle) {
 +            return Route::get('/livewire/livewire.js', $handle);
 +        });
-
++
 +        Livewire::setUpdateRoute(function ($handle) {
 +            return Route::post('/livewire/update', $handle)
 +                ->middleware('web');
 +        });
-+
+
          Table::configureUsing(function (Table $table): void {
              $table->filtersLayout(FiltersLayout::AboveContentCollapsible)
-                 ->paginationMode(PaginationMode::Cursor)
-diff --git a/app/Providers/Filament/AdminPanelProvider.php b/app/Providers/Filament/AdminPanelProvider.php
-index b0420fe..d06f102 100644
---- a/app/Providers/Filament/AdminPanelProvider.php
-+++ b/app/Providers/Filament/AdminPanelProvider.php
-@@ -56,7 +56,7 @@ public function panel(Panel $panel): Panel
-
-             ])
-             ->brandName(name: config('app.name'))
--            ->brandLogo(asset("storage/bandit.png"))
-+            ->brandLogo(asset("storage/bandit.png"))
-             ->profile(isSimple: false)
-             ->colors([
-                 'primary' => Color::{config('settings.theme_color')},
-@@ -101,7 +101,7 @@ public function panel(Panel $panel): Panel
-                 FilamentAuthenticationLogPlugin::make(),
-                 EasyFooterPlugin::make()
-                     ->withGithub()
--                    ->withLogo(asset("storage/bandit.png"), "https://discount-bandit.cybrarist.com", "v-4.0"),
-+                    ->withLogo(asset("storage/bandit.png"), "https://discount-bandit.cybrarist.com", "v-4.0"),
-                 BreezyCore::make()
-                     ->myProfile()
-                     ->enableTwoFactorAuthentication()
 diff --git a/bootstrap/app.php b/bootstrap/app.php
 index 238feb0..898e196 100644
 --- a/bootstrap/app.php
 +++ b/bootstrap/app.php
-@@ -13,6 +13,7 @@
+@@ -13,6 +13,7 @@ return Application::configure(basePath: dirname(__DIR__))
      )
      ->withMiddleware(function (Middleware $middleware) {
          $middleware->trustProxies(at: '*');
@@ -428,216 +613,6 @@ index 238feb0..898e196 100644
      })
      ->withExceptions(function (Exceptions $exceptions) {
  //        $exceptions->render(function (Exception $e) {
-diff --git a/app/Classes/Crawler/ChromiumCrawler.php b/app/Classes/Crawler/ChromiumCrawler.php
-index 1c45bc7..d9d8e83 100644
---- a/app/Classes/Crawler/ChromiumCrawler.php
-+++ b/app/Classes/Crawler/ChromiumCrawler.php
-@@ -8,8 +8,8 @@
- use HeadlessChromium\Exception\BrowserConnectionFailed;
- use HeadlessChromium\Exception\OperationTimedOut;
- use HeadlessChromium\Page;
-+use Illuminate\Support\Facades\File;
- use Illuminate\Support\Facades\Log;
--use Illuminate\Support\Facades\Process;
- use Illuminate\Support\Str;
- use InvalidArgumentException;
-
-@@ -25,67 +25,83 @@ public function __construct(
-         int $timeout_ms = 5000,
-         string $page_event = Page::NETWORK_IDLE,
-     ) {
--        // path to the file to store websocket's uri
--        $socketFile = '/tmp/chrome-php-demo-socket';
-+        $keepAlive = filter_var(env('DISCOUNT_BANDIT_CHROMIUM_KEEP_ALIVE', false), FILTER_VALIDATE_BOOL);
-+        $enableImages = filter_var(env('DISCOUNT_BANDIT_CHROMIUM_ENABLE_IMAGES', false), FILTER_VALIDATE_BOOL);
-+        $userDataDir = $keepAlive
-+            ? env('DISCOUNT_BANDIT_CHROMIUM_USER_DATA_DIR', '/tmp/discount-bandit-chromium-profile')
-+            : sys_get_temp_dir().'/discount-bandit-chromium-'.getmypid().'-'.bin2hex(random_bytes(6));
-+        $socketFile = env('DISCOUNT_BANDIT_CHROMIUM_SOCKET_FILE', '/tmp/discount-bandit-chromium-socket');
-
--        if (! file_exists($socketFile)) {
--            file_put_contents($socketFile, '');
--        }
--
--        $socket = file_get_contents($socketFile);
-+        File::ensureDirectoryExists($userDataDir);
-
-         $options = [
-             //
-             'connectionDelay' => 1.32,
--            'headless' => false,
-+            'enableImages' => $enableImages,
-+            'headless' => true,
-             'noSandbox' => true,
-             "headers" => $extra_headers,
-+            'keepAlive' => $keepAlive,
-+            'userDataDir' => $userDataDir,
-             'customFlags' => [
-                 '--lang=en-US',
-                 '--disable-blink-features=AutomationControlled',
-+                '--disable-background-networking',
-                 '--deny-permission-prompts=true',
-                 '--disable-blink-features=AutomationControlled',
-                 '--disable-web-security',
-+                '--disable-extensions',
-                 '--disable-features=IsolateOrigins,site-per-process',
-+                '--disable-sync',
-                 '--disable-site-isolation-trials',
-                 '--ignore-certificate-errors',
-+                '--metrics-recording-only',
-+                '--mute-audio',
-                 '--no-first-run',
-                 '--no-default-browser-check',
-+                '--no-zygote',
-                 '--no-sandbox',
-                 '--test-type',
-                 '--enable-features=NetworkService,NetworkServiceInProcess',
-                 '--window-size=1920,1080',
-             ],
-             'disableNotifications' => true,
--            'keepAlive' => true,
-             'ignoreHTTPSErrors' => true,
-             'ignoreCertificateErrors' => true,
-             'stealth' => true,
-             'bypassCSP' => true,
-         ];
-
--        try {
--            $browser = BrowserFactory::connectToBrowser($socket);
--        } catch (BrowserConnectionFailed|InvalidArgumentException $e) {
--            Log::info('New Chrome instance');
--            Log::info($e->getMessage());
--            $browserType = app()->isProduction() ? 'chromium' : null;
-+        $browser = null;
-+        $page = null;
-
--            // just in case there is a chromium process running on the server
--            Process::run("killall chromium");
-+        if ($keepAlive && file_exists($socketFile)) {
-+            try {
-+                $browser = BrowserFactory::connectToBrowser((string) file_get_contents($socketFile));
-+            } catch (BrowserConnectionFailed|InvalidArgumentException $e) {
-+                Log::warning('Could not reconnect to existing Chrome instance; starting a new one.', [
-+                    'message' => $e->getMessage(),
-+                ]);
-+            }
-+        }
-+
-+        if ($browser === null) {
-+            Log::debug('New Chrome instance', ['keep_alive' => $keepAlive]);
-+            $browserType = app()->isProduction() ? 'chromium' : null;
-
--            // The browser was probably closed, start it again
-             $browser_factory = new BrowserFactory($browserType);
-
-             $browser = $browser_factory
-                 ->createBrowser($options);
--            // save the uri to be able to connect again to the browser
--            file_put_contents($socketFile, $browser->getSocketUri(), LOCK_EX);
--        }
-
--        $page = $browser->createPage();
-+            if ($keepAlive) {
-+                file_put_contents($socketFile, $browser->getSocketUri(), LOCK_EX);
-+            }
-+        }
-
-         try {
-+            $page = $browser->createPage();
-+
-             $page->navigate($url)
-                 ->waitForNavigation($page_event, $timeout_ms);
-
-@@ -94,14 +110,33 @@ public function __construct(
-             }
-
-             $this->dom = HTMLDocument::createFromString($page->getHtml(), LIBXML_NOERROR);
--            $page->close();
-         } catch (OperationTimedOut $e) {
-             $this->dom = HTMLDocument::createFromString($page->getHtml(), LIBXML_NOERROR);
--            $page->close();
-         } catch (Exception $exception) {
-             Log::error("Crawling using chrome");
-             Log::error($exception->getMessage());
--            $page->close();
-+        } finally {
-+            if ($page !== null) {
-+                try {
-+                    $page->close();
-+                } catch (Exception) {
-+                    // The browser may already be gone after navigation errors.
-+                }
-+            }
-+
-+            if (! $keepAlive) {
-+                try {
-+                    $browser->close();
-+                } catch (Exception) {
-+                    // The process may already have exited after a failed launch.
-+                }
-+
-+                File::deleteDirectory($userDataDir);
-+            }
-+        }
-+
-+        if (! isset($this->dom)) {
-+            $this->dom = HTMLDocument::createFromString('', LIBXML_NOERROR);
-         }
-     }
-
-diff --git a/app/Classes/CustomStoreTemplate.php b/app/Classes/CustomStoreTemplate.php
-index b37d25a..31f0634 100644
---- a/app/Classes/CustomStoreTemplate.php
-+++ b/app/Classes/CustomStoreTemplate.php
-@@ -102,7 +102,9 @@ public function crawl_product(): void
-                 user_agent: $this->user_agent,
-             )->dom;
-         }
--        $this->dom->saveHTMLFile('response.html');
-+        if (filter_var(env('DISCOUNT_BANDIT_SAVE_CRAWL_RESPONSE', false), FILTER_VALIDATE_BOOL)) {
-+            $this->dom->saveHTMLFile(storage_path('logs/response.html'));
-+        }
-
-         $this->schema = new SchemaParser($this->dom)->schema;
-
-diff --git a/app/Classes/StoreTemplate.php b/app/Classes/StoreTemplate.php
-index c8677f8..69d2c3a 100644
---- a/app/Classes/StoreTemplate.php
-+++ b/app/Classes/StoreTemplate.php
-@@ -102,7 +102,9 @@ public function crawl_product(): void
-                 user_agent: $this->user_agent,
-             )->dom;
-         }
--        $this->dom->saveHTMLFile('response.html');
-+        if (filter_var(env('DISCOUNT_BANDIT_SAVE_CRAWL_RESPONSE', false), FILTER_VALIDATE_BOOL)) {
-+            $this->dom->saveHTMLFile(storage_path('logs/response.html'));
-+        }
-
-         $this->schema = new SchemaParser($this->dom)->schema;
-     }
-diff --git a/app/Console/Commands/DiscountFillSupervisorWorkersCommand.php b/app/Console/Commands/DiscountFillSupervisorWorkersCommand.php
-index b2cd79b..f00d85f 100644
---- a/app/Console/Commands/DiscountFillSupervisorWorkersCommand.php
-+++ b/app/Console/Commands/DiscountFillSupervisorWorkersCommand.php
-@@ -45,14 +45,16 @@ public function handle()
- [program:laravel-worker-{$store->id}]
- process_name=%(program_name)s_%(process_num)02d
- user=root
--command=php artisan queue:work --queue={$store->slug} --max-time=300 --sleep=1 --tries=1
-+command=php artisan queue:work --queue={$store->slug} --max-time=180 --max-jobs=25 --memory=192 --timeout=60 --sleep=2 --tries=1
- autostart=true
- autorestart=true
- stopasgroup=true
- killasgroup=true
- numprocs=1
- redirect_stderr=true
--stdout_logfile=/var/log/worker.log
-+stdout_logfile=/logs/worker-{$store->slug}.log
-+stdout_logfile_maxbytes=5MB
-+stdout_logfile_backups=2
- stopwaitsecs=300
-                     ");
-
 diff --git a/docker/base_supervisord.conf b/docker/base_supervisord.conf
 index b7efe54..0f354a4 100644
 --- a/docker/base_supervisord.conf
@@ -695,10 +670,10 @@ index b7efe54..0f354a4 100644
 +stdout_logfile_backups=2
  stopwaitsecs=300
 diff --git a/routes/console.php b/routes/console.php
-index c90ceb0..bb172a6 100644
+index 8a97a07..316cd0f 100644
 --- a/routes/console.php
 +++ b/routes/console.php
-@@ -15,16 +15,21 @@
+@@ -15,16 +15,21 @@ Schedule::command('discount:delete-links-out-of-stock')
 
  Schedule::call(function () {
      try {
@@ -723,7 +698,7 @@ index c90ceb0..bb172a6 100644
          })
              ->where('status', StoreStatusEnum::Active)
              ->get();
-@@ -34,10 +39,14 @@
+@@ -34,10 +39,14 @@ Schedule::call(function () {
                  CrawlProductJob::dispatch($link->id)
                      ->onQueue($store->slug)
                      ->delay(now()->addSeconds($index * 5));

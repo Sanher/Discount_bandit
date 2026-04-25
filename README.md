@@ -26,8 +26,10 @@ El wrapper se encarga de:
 
 - `upstream_repo`: `https://github.com/cybrarist/discount-bandit.git`
 - `upstream_ref`: `2175ced1c82407ac35483b9912b9f6514cb5c63c`
+- `upstream_image`: `cybrarist/discount-bandit:v4.0.3`
+- `upstream_image_index_digest`: `sha256:78fc1a1f0f0279a4da914c42ca024081c390e247a62c46afa239ee0d13fc7924`
 
-Ese `upstream_ref` corresponde al contenido upstream usado por la imagen `cybrarist/discount-bandit:v4.0.3` que parchea el add-on padre.
+The parent add-on patches the `cybrarist/discount-bandit:v4.0.3` Docker image. That image does not exactly match the Git tag for `app/Classes/Crawler/ChromiumCrawler.php`, so the canonical patch is generated and validated against the source extracted from the Docker image.
 
 ## Integración con el repo padre
 
