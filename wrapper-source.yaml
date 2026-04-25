@@ -1,7 +1,7 @@
 wrapper_name: discount_bandit
 wrapper_type: home_assistant_wrapper_source
 upstream_repo: https://github.com/cybrarist/discount-bandit.git
-upstream_ref: ef0637c9a7a1c01a31ad96754f2ae1bb17ac7d9b
+upstream_ref: 2175ced1c82407ac35483b9912b9f6514cb5c63c
 runtime_entrypoint: run.sh
 nginx_config: nginx.conf
 patches_dir: patches

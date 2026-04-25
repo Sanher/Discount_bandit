@@ -25,9 +25,9 @@ El wrapper se encarga de:
 ## Upstream fijado
 
 - `upstream_repo`: `https://github.com/cybrarist/discount-bandit.git`
-- `upstream_ref`: `ef0637c9a7a1c01a31ad96754f2ae1bb17ac7d9b`
+- `upstream_ref`: `2175ced1c82407ac35483b9912b9f6514cb5c63c`
 
-Ese `upstream_ref` corresponde al estado upstream revisado para esta integración v1.
+Ese `upstream_ref` corresponde al contenido upstream usado por la imagen `cybrarist/discount-bandit:v4.0.3` que parchea el add-on padre.
 
 ## Integración con el repo padre
 

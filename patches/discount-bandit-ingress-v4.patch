@@ -464,7 +464,7 @@ index 1c45bc7..d9d8e83 100644
 
          $options = [
              //
-             'connectionDelay' => 1,
+             'connectionDelay' => 1.32,
 -            'headless' => false,
 +            'enableImages' => $enableImages,
 +            'headless' => true,
