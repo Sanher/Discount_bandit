@@ -45,6 +45,37 @@ json_string() {
   printf "%s" "${default_value}"
 }
 
+json_integer() {
+  filter="$1"
+  default_value="$2"
+  minimum="$3"
+  maximum="$4"
+
+  value="$(json_string "${filter}" "${default_value}")"
+
+  case "${value}" in
+    ''|*[!0-9]*)
+      log_warn "Valor invalido para ${filter}: '${value}'. Usando ${default_value}."
+      printf "%s" "${default_value}"
+      return 0
+      ;;
+  esac
+
+  if [ "${value}" -lt "${minimum}" ]; then
+    log_warn "Valor demasiado bajo para ${filter}: '${value}'. Usando ${minimum}."
+    printf "%s" "${minimum}"
+    return 0
+  fi
+
+  if [ "${value}" -gt "${maximum}" ]; then
+    log_warn "Valor demasiado alto para ${filter}: '${value}'. Usando ${maximum}."
+    printf "%s" "${maximum}"
+    return 0
+  fi
+
+  printf "%s" "${value}"
+}
+
 trim_trailing_slash() {
   printf "%s" "$1" | sed 's:/*$::'
 }
@@ -106,8 +137,11 @@ patch_supervisor_logs() {
 
 start_log_tail() {
   # Mirror both the upstream process logs and Laravel app logs to stdout for HA visibility.
+  current_laravel_log="${STORAGE_DIR}/logs/laravel-$(date -u +%Y-%m-%d).log"
+
   touch \
     "${STORAGE_DIR}/logs/laravel.log" \
+    "${current_laravel_log}" \
     "${LOG_DIR}/supervisord_stdout.log" \
     "${LOG_DIR}/octane_stdout.log" \
     "${LOG_DIR}/octane_stderr.log" \
@@ -116,6 +150,7 @@ start_log_tail() {
 
   tail -q -n 0 -F \
     "${STORAGE_DIR}/logs/laravel.log" \
+    "${current_laravel_log}" \
     "${LOG_DIR}/supervisord_stdout.log" \
     "${LOG_DIR}/octane_stdout.log" \
     "${LOG_DIR}/octane_stderr.log" \
@@ -210,6 +245,7 @@ export_runtime_config() {
   theme_color="$(json_string '.theme_color' 'Red')"
   cron_expression="$(json_string '.cron' '*/5 * * * *')"
   exchange_rate_api_key="$(json_string '.exchange_rate_api_key' '')"
+  max_links_per_store="$(json_integer '.max_links_per_store' '10' '1' '60')"
 
   export APP_ENV="production"
   export APP_DEBUG="false"
@@ -219,10 +255,16 @@ export_runtime_config() {
   export SESSION_DRIVER="database"
   export CACHE_STORE="database"
   export QUEUE_CONNECTION="database"
+  export LOG_CHANNEL="${LOG_CHANNEL:-daily}"
+  export LOG_DAILY_DAYS="${LOG_DAILY_DAYS:-7}"
   export LOG_LEVEL="info"
   export THEME_COLOR="${theme_color}"
   export CRON="${cron_expression}"
   export EXCHANGE_RATE_API_KEY="${exchange_rate_api_key}"
+  export DISCOUNT_BANDIT_CHROMIUM_KEEP_ALIVE="${DISCOUNT_BANDIT_CHROMIUM_KEEP_ALIVE:-false}"
+  export DISCOUNT_BANDIT_CHROMIUM_ENABLE_IMAGES="${DISCOUNT_BANDIT_CHROMIUM_ENABLE_IMAGES:-false}"
+  export DISCOUNT_BANDIT_SAVE_CRAWL_RESPONSE="${DISCOUNT_BANDIT_SAVE_CRAWL_RESPONSE:-false}"
+  export DISCOUNT_BANDIT_MAX_LINKS_PER_STORE="${max_links_per_store}"
 
   if [ "${USE_NGINX_PROXY:-0}" = "1" ]; then
     export FRANKEN_HOST="127.0.0.1"
@@ -248,6 +290,8 @@ export_runtime_config() {
   log_info "Usando SQLite persistente en ${DB_FILE}."
   log_info "Logs persistentes en ${LOG_DIR}."
   log_info "Frecuencia de comprobacion configurada a '${cron_expression}'."
+  log_info "Crawler limitado a ${max_links_per_store} enlaces por tienda activa y ciclo."
+  log_info "Chromium persistente: ${DISCOUNT_BANDIT_CHROMIUM_KEEP_ALIVE}; guardar response.html: ${DISCOUNT_BANDIT_SAVE_CRAWL_RESPONSE}."
 }
 
 main() {
