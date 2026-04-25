@@ -327,10 +327,10 @@ index fc5cd0e..0fb84bc 100644
          $data['role'] = RoleEnum::Admin->value;
 diff --git a/app/Http/Middleware/TrustIngressPath.php b/app/Http/Middleware/TrustIngressPath.php
 new file mode 100644
-index 0000000..8b37284
+index 0000000..7cf125a
 --- /dev/null
 +++ b/app/Http/Middleware/TrustIngressPath.php
-@@ -0,0 +1,218 @@
+@@ -0,0 +1,235 @@
 +<?php
 +
 +namespace App\Http\Middleware;
@@ -449,6 +449,7 @@ index 0000000..8b37284
 +        $baseUrl = $context['base_url'];
 +        $hostRoot = $context['scheme'].'://'.$context['host'];
 +        $homeUrl = $baseUrl.'/products';
++        $jsonEscapedBaseUrl = str_replace('/', '\/', $baseUrl);
 +        $jsonEscapedHostRoot = str_replace('/', '\/', $hostRoot);
 +        $jsonEscapedHomeUrl = str_replace('/', '\/', $homeUrl);
 +        $jsonEscapedIngressPath = str_replace('/', '\/', $ingressPath);
@@ -466,6 +467,10 @@ index 0000000..8b37284
 +                ' href="'.$hostRoot.'"',
 +                " href='".$hostRoot."/'",
 +                " href='".$hostRoot."'",
++                ' href="'.$baseUrl.'/"',
++                ' href="'.$baseUrl.'"',
++                " href='".$baseUrl."/'",
++                " href='".$baseUrl."'",
 +                '"/livewire/',
 +                '"/storage/',
 +                "'/livewire/",
@@ -479,6 +484,10 @@ index 0000000..8b37284
 +                'href=\"'.$jsonEscapedHostRoot.'\/\"',
 +                'href=\"'.$hostRoot.'\"',
 +                'href=\"'.$jsonEscapedHostRoot.'\"',
++                'href=\"'.$baseUrl.'\/\"',
++                'href=\"'.$jsonEscapedBaseUrl.'\/\"',
++                'href=\"'.$baseUrl.'\"',
++                'href=\"'.$jsonEscapedBaseUrl.'\"',
 +                'href=\"\/\"',
 +                'href=\"/\"',
 +                'src=\"\/livewire\/',
@@ -496,6 +505,10 @@ index 0000000..8b37284
 +                ' href="'.$homeUrl.'"',
 +                " href='".$homeUrl."'",
 +                " href='".$homeUrl."'",
++                ' href="'.$homeUrl.'"',
++                ' href="'.$homeUrl.'"',
++                " href='".$homeUrl."'",
++                " href='".$homeUrl."'",
 +                '"'.$ingressPath.'/livewire/',
 +                '"'.$ingressPath.'/storage/',
 +                "'".$ingressPath.'/livewire/',
@@ -505,6 +518,10 @@ index 0000000..8b37284
 +                ' src="'.$ingressPath.'/livewire/',
 +                ' src="'.$ingressPath.'/storage/',
 +                ' data-update-uri="'.$ingressPath.'/livewire/',
++                'href=\"'.$jsonEscapedHomeUrl.'\"',
++                'href=\"'.$jsonEscapedHomeUrl.'\"',
++                'href=\"'.$jsonEscapedHomeUrl.'\"',
++                'href=\"'.$jsonEscapedHomeUrl.'\"',
 +                'href=\"'.$jsonEscapedHomeUrl.'\"',
 +                'href=\"'.$jsonEscapedHomeUrl.'\"',
 +                'href=\"'.$jsonEscapedHomeUrl.'\"',
