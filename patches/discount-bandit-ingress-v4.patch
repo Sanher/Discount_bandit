@@ -670,7 +670,7 @@ index b7efe54..0f354a4 100644
 +stdout_logfile_backups=2
  stopwaitsecs=300
 diff --git a/routes/console.php b/routes/console.php
-index 8a97a07..316cd0f 100644
+index 8a97a07..47d4af8 100644
 --- a/routes/console.php
 +++ b/routes/console.php
 @@ -15,16 +15,21 @@ Schedule::command('discount:delete-links-out-of-stock')
@@ -698,7 +698,7 @@ index 8a97a07..316cd0f 100644
          })
              ->where('status', StoreStatusEnum::Active)
              ->get();
-@@ -34,10 +39,14 @@ Schedule::call(function () {
+@@ -34,14 +39,20 @@ Schedule::call(function () {
                  CrawlProductJob::dispatch($link->id)
                      ->onQueue($store->slug)
                      ->delay(now()->addSeconds($index * 5));
@@ -714,3 +714,9 @@ index 8a97a07..316cd0f 100644
      } catch (Exception $e) {
          Log::error("Couldn't Run the Product Schedule, Error: \n".$e);
      }
+-})->everyTenSeconds();
++})->name('discount-products-crawl')
++    ->cron(env('CRON', '0 */2 * * *'))
++    ->withoutOverlapping();
+
+ // Schedule::job(\App\Jobs\CheckGroupPriceJob::class)->cron(config('settings.group_cron'));

@@ -245,7 +245,7 @@ monitor_processes() {
 export_runtime_config() {
   public_base_url="$(trim_trailing_slash "$(json_string '.public_base_url' '')")"
   theme_color="$(json_string '.theme_color' 'Red')"
-  cron_expression="$(json_string '.cron' '*/5 * * * *')"
+  cron_expression="$(json_string '.cron' '0 */2 * * *')"
   exchange_rate_api_key="$(json_string '.exchange_rate_api_key' '')"
   max_links_per_store="$(json_integer '.max_links_per_store' '10' '1' '60')"
 
