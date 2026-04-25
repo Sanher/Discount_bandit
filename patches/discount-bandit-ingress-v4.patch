@@ -327,10 +327,10 @@ index fc5cd0e..0fb84bc 100644
          $data['role'] = RoleEnum::Admin->value;
 diff --git a/app/Http/Middleware/TrustIngressPath.php b/app/Http/Middleware/TrustIngressPath.php
 new file mode 100644
-index 0000000..3f550c1
+index 0000000..8b37284
 --- /dev/null
 +++ b/app/Http/Middleware/TrustIngressPath.php
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,218 @@
 +<?php
 +
 +namespace App\Http\Middleware;
@@ -371,7 +371,7 @@ index 0000000..3f550c1
 +        }
 +
 +        if ($context !== null) {
-+            $this->rewriteIngressAwareMarkup($response, $context);
++            $this->rewriteIngressAwareResponse($response, $context);
 +        }
 +
 +        return $response;
@@ -431,11 +431,11 @@ index 0000000..3f550c1
 +            || $request->path() === '/';
 +    }
 +
-+    protected function rewriteIngressAwareMarkup(Response $response, array $context): void
++    protected function rewriteIngressAwareResponse(Response $response, array $context): void
 +    {
 +        $contentType = (string) $response->headers->get('Content-Type', '');
 +
-+        if (! Str::contains($contentType, 'text/html')) {
++        if (! Str::contains($contentType, ['text/html', 'application/json', 'application/vnd.livewire'])) {
 +            return;
 +        }
 +
@@ -449,6 +449,9 @@ index 0000000..3f550c1
 +        $baseUrl = $context['base_url'];
 +        $hostRoot = $context['scheme'].'://'.$context['host'];
 +        $homeUrl = $baseUrl.'/products';
++        $jsonEscapedHostRoot = str_replace('/', '\/', $hostRoot);
++        $jsonEscapedHomeUrl = str_replace('/', '\/', $homeUrl);
++        $jsonEscapedIngressPath = str_replace('/', '\/', $ingressPath);
 +
 +        if ($ingressPath === '') {
 +            return;
@@ -472,6 +475,18 @@ index 0000000..3f550c1
 +                ' src="/livewire/',
 +                ' src="/storage/',
 +                ' data-update-uri="/livewire/',
++                'href=\"'.$hostRoot.'\/\"',
++                'href=\"'.$jsonEscapedHostRoot.'\/\"',
++                'href=\"'.$hostRoot.'\"',
++                'href=\"'.$jsonEscapedHostRoot.'\"',
++                'href=\"\/\"',
++                'href=\"/\"',
++                'src=\"\/livewire\/',
++                'src=\"/livewire/',
++                'src=\"\/storage\/',
++                'src=\"/storage/',
++                'data-update-uri=\"\/livewire\/',
++                'data-update-uri=\"/livewire/',
 +            ],
 +            [
 +                $baseUrl.'/livewire/',
@@ -490,12 +505,25 @@ index 0000000..3f550c1
 +                ' src="'.$ingressPath.'/livewire/',
 +                ' src="'.$ingressPath.'/storage/',
 +                ' data-update-uri="'.$ingressPath.'/livewire/',
++                'href=\"'.$jsonEscapedHomeUrl.'\"',
++                'href=\"'.$jsonEscapedHomeUrl.'\"',
++                'href=\"'.$jsonEscapedHomeUrl.'\"',
++                'href=\"'.$jsonEscapedHomeUrl.'\"',
++                'href=\"'.$jsonEscapedHomeUrl.'\"',
++                'href=\"'.$homeUrl.'\"',
++                'src=\"'.$jsonEscapedIngressPath.'\/livewire\/',
++                'src=\"'.$ingressPath.'/livewire/',
++                'src=\"'.$jsonEscapedIngressPath.'\/storage\/',
++                'src=\"'.$ingressPath.'/storage/',
++                'data-update-uri=\"'.$jsonEscapedIngressPath.'\/livewire\/',
++                'data-update-uri=\"'.$ingressPath.'/livewire/',
 +            ],
 +            $content
 +        );
 +
 +        if ($rewritten !== $content) {
 +            $response->setContent($rewritten);
++            $response->headers->remove('Content-Length');
 +        }
 +    }
 +
